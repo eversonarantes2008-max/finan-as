@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import jsPDF from 'jspdf';
 import { User, AccountItem } from '../types';
 import {
   getUserAccountsForMonth,
@@ -11,8 +10,10 @@ import {
 } from '../utils/storage';
 import { AccountRow } from './AccountRow';
 import { SummaryFooter } from './SummaryFooter';
+import { HistoryModal } from './HistoryModal';
+import { generateSingleMonthPDF } from '../utils/pdf';
 import { formatBRL } from '../utils/currency';
-import { Plus, Calendar, RotateCcw, Share2, Search, Filter, CheckCircle, AlertCircle, FileText, Check, Clock, Download } from 'lucide-react';
+import { Plus, Calendar, RotateCcw, Share2, Search, Filter, CheckCircle, AlertCircle, FileText, Check, Clock, Download, History } from 'lucide-react';
 
 interface AccountsListProps {
   currentUser: User;
@@ -36,6 +37,9 @@ export const AccountsList: React.FC<AccountsListProps> = ({ currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'paid'>('all');
   
+  // History Modal
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
   // Feedback toast
   const [copiedToast, setCopiedToast] = useState(false);
 
@@ -181,108 +185,7 @@ export const AccountsList: React.FC<AccountsListProps> = ({ currentUser }) => {
   };
 
   const handleDownloadPDF = () => {
-    const doc = new jsPDF();
-    const targetAccounts = dueDayAccounts;
-
-    const tabTitle =
-      activeDueDayTab === 'day5'
-        ? 'Contas do Dia 05'
-        : activeDueDayTab === 'day20'
-        ? 'Contas do Dia 20'
-        : 'Todas as Contas';
-
-    const totalGeral = targetAccounts.reduce((acc, curr) => acc + (curr.amount || 0), 0);
-    const totalPago = targetAccounts
-      .filter((a) => a.isPaid)
-      .reduce((acc, curr) => acc + (curr.amount || 0), 0);
-    const totalRestante = totalGeral - totalPago;
-
-    // Header Background
-    doc.setFillColor(15, 23, 42);
-    doc.rect(0, 0, 210, 35, 'F');
-
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Relatório de Contas', 14, 18);
-
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`${tabTitle} - ${formatMonthName(selectedMonth)}`, 14, 27);
-
-    doc.setFontSize(8);
-    doc.text(`Usuário: ${currentUser.email}`, 196, 18, { align: 'right' });
-    doc.text(`Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 196, 25, { align: 'right' });
-
-    // Summary Box
-    doc.setFillColor(241, 245, 249);
-    doc.roundedRect(14, 42, 182, 22, 3, 3, 'F');
-
-    doc.setTextColor(30, 41, 59);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    
-    doc.text(`Total Geral: ${formatBRL(totalGeral)}`, 20, 55);
-    doc.setTextColor(16, 185, 129);
-    doc.text(`Total Pago: ${formatBRL(totalPago)}`, 85, 55);
-    doc.setTextColor(225, 29, 72);
-    doc.text(`Restante: ${formatBRL(totalRestante)}`, 145, 55);
-
-    // Table Header
-    let y = 74;
-    doc.setFillColor(30, 41, 59);
-    doc.rect(14, y, 182, 8, 'F');
-
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Conta / Descrição', 18, y + 5.5);
-    doc.text('Vencimento', 95, y + 5.5);
-    doc.text('Valor (R$)', 135, y + 5.5);
-    doc.text('Status', 178, y + 5.5, { align: 'center' });
-
-    y += 12;
-
-    // Table Rows
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-
-    targetAccounts.forEach((acc, index) => {
-      if (y > 270) {
-        doc.addPage();
-        y = 20;
-      }
-
-      if (index % 2 === 0) {
-        doc.setFillColor(248, 250, 252);
-        doc.rect(14, y - 4, 182, 7, 'F');
-      }
-
-      doc.setTextColor(30, 41, 59);
-      doc.text(acc.name, 18, y);
-      doc.text(acc.dueDay === 5 ? '5º Dia Útil' : `Dia ${acc.dueDay}`, 95, y);
-      doc.text(formatBRL(acc.amount), 135, y);
-
-      if (acc.isPaid) {
-        doc.setTextColor(16, 185, 129);
-        doc.setFont('helvetica', 'bold');
-        doc.text('PAGO', 178, y, { align: 'center' });
-      } else {
-        doc.setTextColor(225, 29, 72);
-        doc.setFont('helvetica', 'bold');
-        doc.text('A PAGAR', 178, y, { align: 'center' });
-      }
-      doc.setFont('helvetica', 'normal');
-
-      y += 7;
-    });
-
-    // Footer note
-    doc.setFontSize(8);
-    doc.setTextColor(148, 163, 184);
-    doc.text('Relatório de Finanças Mensais - Documento de controle financeiro', 105, 288, { align: 'center' });
-
-    doc.save(`contas-${selectedMonth}-${activeDueDayTab}.pdf`);
+    generateSingleMonthPDF(selectedMonth, accounts, activeDueDayTab, currentUser.email);
   };
 
   return (
@@ -375,6 +278,14 @@ export const AccountsList: React.FC<AccountsListProps> = ({ currentUser }) => {
               title="Baixar lista em PDF"
             >
               <Download className="w-4 h-4 text-rose-400" /> Baixar PDF
+            </button>
+
+            <button
+              onClick={() => setIsHistoryOpen(true)}
+              className="py-2 px-3 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              title="Ver histórico de meses e PDFs"
+            >
+              <History className="w-4 h-4 text-sky-400" /> Histórico PDF
             </button>
 
             <button
@@ -576,6 +487,17 @@ export const AccountsList: React.FC<AccountsListProps> = ({ currentUser }) => {
         totalRemaining={totalRemaining}
         totalPaid={totalPaid}
       />
+
+      {/* History Modal */}
+      {isHistoryOpen && (
+        <HistoryModal
+          currentUser={currentUser}
+          availableMonths={availableMonths}
+          selectedMonth={selectedMonth}
+          onSelectMonth={(mKey) => setSelectedMonth(mKey)}
+          onClose={() => setIsHistoryOpen(false)}
+        />
+      )}
     </div>
   );
 };
